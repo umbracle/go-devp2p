@@ -37,45 +37,7 @@ func randPeerID() string {
 	return hex.EncodeToString(buf)
 }
 
-// Test basic features of the bucket struct
-func TestBucket(t *testing.T) {
-	b := newBucket()
-
-	peers := make([]*Entry, 100)
-	for i := 0; i < 100; i++ {
-		peers[i] = randEntry()
-		b.PushFront(peers[i])
-	}
-
-	local := randPeerID()
-	localID := convertPeerID(local)
-
-	i := rand.Intn(len(peers))
-	if !b.Has(peers[i].id) {
-		t.Errorf("Failed to find peer: %v", peers[i])
-	}
-
-	spl := b.Split(0, convertPeerID(local))
-	llist := b.list
-	for e := llist.Front(); e != nil; e = e.Next() {
-		p := e.Value.(*Entry).hash
-		cpl := CommonPrefixLen(p, localID)
-		if cpl > 0 {
-			t.Fatalf("Split failed. found id with cpl > 0 in 0 bucket")
-		}
-	}
-
-	rlist := spl.list
-	for e := rlist.Front(); e != nil; e = e.Next() {
-		p := e.Value.(*Entry).hash
-		cpl := CommonPrefixLen(p, localID)
-		if cpl == 0 {
-			t.Fatalf("Split failed. found id with cpl == 0 in non 0 bucket")
-		}
-	}
-}
-
-func TestTableCallbacks(t *testing.T) {
+func TestKademlia_Callbacks(t *testing.T) {
 	local := randPeerID()
 	rt := NewRoutingTable(10, local, time.Hour, sha3.New256())
 
@@ -120,7 +82,7 @@ func TestTableCallbacks(t *testing.T) {
 }
 
 // Right now, this just makes sure that it doesnt hang or crash
-func TestTableUpdate(t *testing.T) {
+func TestKademlia_UpdatePeers(t *testing.T) {
 	local := randPeerID()
 	rt := NewRoutingTable(10, local, time.Hour, sha3.New256())
 
@@ -143,7 +105,7 @@ func TestTableUpdate(t *testing.T) {
 	}
 }
 
-func TestTableFind(t *testing.T) {
+func TestKademlia_FindNearestPeer(t *testing.T) {
 	local := randPeerID()
 	rt := NewRoutingTable(10, local, time.Hour, sha3.New256())
 
@@ -158,7 +120,7 @@ func TestTableFind(t *testing.T) {
 	}
 }
 
-func TestTableEldestPreferred(t *testing.T) {
+func TestKademlia_EldestPreferred(t *testing.T) {
 	local := randPeerID()
 	rt := NewRoutingTable(10, local, time.Hour, sha3.New256())
 
@@ -186,7 +148,7 @@ func TestTableEldestPreferred(t *testing.T) {
 	}
 }
 
-func TestTableFindMultiple(t *testing.T) {
+func TestKademlia_FindMultiple(t *testing.T) {
 	local := randPeerID()
 	rt := NewRoutingTable(20, local, time.Hour, sha3.New256())
 
@@ -204,7 +166,7 @@ func TestTableFindMultiple(t *testing.T) {
 // Looks for race conditions in table operations. For a more 'certain'
 // test, increase the loop counter from 1000 to a much higher number
 // and set GOMAXPROCS above 1
-func TestTableMultithreaded(t *testing.T) {
+func TestKademlia_Multithreaded(t *testing.T) {
 	tab := NewRoutingTable(20, "localPeer", time.Hour, sha3.New256())
 	var peers []string
 	for i := 0; i < 500; i++ {
