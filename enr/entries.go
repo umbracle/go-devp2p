@@ -49,8 +49,8 @@ func (i IPv6) MarshalRLPWith(ar *fastrlp.Arena) *fastrlp.Value {
 
 func (i *IPv6) UnmarshalRLPWith(v *fastrlp.Value) (err error) {
 	*i, err = v.GetBytes(*i)
-	if len(*i) != 4 {
-		return fmt.Errorf("4 bytes expected for ipv4: %v", *v)
+	if len(*i) != 16 {
+		return fmt.Errorf("16 bytes expected for ipv4: %d", len(*i))
 	}
 	return err
 }
@@ -67,8 +67,8 @@ func (i IPv4) MarshalRLPWith(ar *fastrlp.Arena) *fastrlp.Value {
 
 func (i *IPv4) UnmarshalRLPWith(v *fastrlp.Value) (err error) {
 	*i, err = v.GetBytes(*i)
-	if len(*i) != 16 {
-		return fmt.Errorf("16 bytes expected for ipv6: %v", *v)
+	if len(*i) != 4 {
+		return fmt.Errorf("4 bytes expected for ipv6: %d", len(*i))
 	}
 	return err
 }

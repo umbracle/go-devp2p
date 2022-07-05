@@ -1,8 +1,10 @@
 package enr
 
 import (
+	"encoding/base64"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/umbracle/fastrlp"
 )
@@ -16,6 +18,18 @@ type Record struct {
 type Entry interface {
 	MarshalRLPWith(ar *fastrlp.Arena) *fastrlp.Value
 	UnmarshalRLPWith(v *fastrlp.Value) error
+}
+
+func (r *Record) SetSeq(i uint64) {
+	r.seq = i
+}
+
+func (r *Record) Seq() uint64 {
+	return r.seq
+}
+
+func (r *Record) Signature() []byte {
+	return r.signature
 }
 
 func (r *Record) Reset() {
@@ -35,12 +49,7 @@ func (r *Record) Load(k string, v Entry) error {
 	if found == nil {
 		return fmt.Errorf("key %s not found", k)
 	}
-	p := fastrlp.Parser{}
-	val, err := p.Parse(found.v)
-	if err != nil {
-		return err
-	}
-	if err := v.UnmarshalRLPWith(val); err != nil {
+	if err := v.UnmarshalRLPWith(found.v); err != nil {
 		return err
 	}
 	return nil
@@ -48,16 +57,18 @@ func (r *Record) Load(k string, v Entry) error {
 
 func (r *Record) AddEntry(k string, v Entry) {
 	ar := &fastrlp.Arena{}
-	buf := v.MarshalRLPWith(ar).MarshalTo(nil)
-
 	r.entries = append(r.entries, entry{
 		k: k,
-		v: buf,
+		v: v.MarshalRLPWith(ar),
 	})
 	r.entries.Sort()
 }
 
-func (r *Record) Marshal() []byte {
+func (r *Record) Marshal() string {
+	return "enr:" + base64.RawURLEncoding.EncodeToString(r.MarshalRLP())
+}
+
+func (r *Record) MarshalRLP() []byte {
 	ar := &fastrlp.Arena{}
 
 	v := ar.NewArray()
@@ -65,14 +76,28 @@ func (r *Record) Marshal() []byte {
 	v.Set(ar.NewUint(r.seq))
 	for _, entry := range r.entries {
 		v.Set(ar.NewCopyBytes([]byte(entry.k)))
-		v.Set(ar.NewCopyBytes(entry.v))
+		v.Set(entry.v)
 	}
 
 	buf := v.MarshalTo(nil)
 	return buf
 }
 
-func (r *Record) Unmarshal(b []byte) error {
+func (r *Record) Unmarshal(s string) error {
+	if !strings.HasPrefix(s, "enr:") {
+		return fmt.Errorf("there is no enr prefix")
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(s[4:])
+	if err != nil {
+		return err
+	}
+	if err := r.UnmarshalRLP(raw); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (r *Record) UnmarshalRLP(b []byte) error {
 	p := &fastrlp.Parser{}
 	v, err := p.Parse(b)
 	if err != nil {
@@ -109,15 +134,12 @@ func (r *Record) Unmarshal(b []byte) error {
 		entry.k = string(dst)
 
 		// value of the entry
-		if dst, err = elems[i].GetBytes(nil); err != nil {
-			return err
-		}
-		entry.v = dst
+		entry.v = elems[i+1]
 		r.entries = append(r.entries, entry)
 	}
 
 	// check that the entry items are sorted
-	for i := 1; i < len(r.entries); i++ {
+	for i := 0; i < len(r.entries)-1; i++ {
 		a, b := r.entries[i], r.entries[i+1]
 
 		if a.k == b.k {
@@ -130,7 +152,7 @@ func (r *Record) Unmarshal(b []byte) error {
 	return nil
 }
 
-func Unmarshal(b []byte) (*Record, error) {
+func Unmarshal(b string) (*Record, error) {
 	r := &Record{}
 	if err := r.Unmarshal(b); err != nil {
 		return nil, err
@@ -158,5 +180,5 @@ func (e entries) Sort() {
 
 type entry struct {
 	k string
-	v []byte
+	v *fastrlp.Value
 }
