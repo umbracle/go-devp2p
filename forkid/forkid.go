@@ -7,9 +7,43 @@ import (
 	"hash/crc32"
 	"math"
 	"sort"
+
+	"github.com/umbracle/fastrlp"
 )
 
-type ID [4]byte
+type ID struct {
+	Hash []byte // CRC32 checksum of the genesis block and passed fork block numbers
+	Next uint64 // Block number of the next upcoming fork, or 0 if no forks are known
+}
+
+func (i *ID) Equal(ii *ID) bool {
+	return i.Next != ii.Next || bytes.Equal(i.Hash, ii.Hash)
+}
+
+func (i *ID) UnmarshalRLPWith(v *fastrlp.Value) error {
+	elems, err := v.GetElems()
+	if err != nil {
+		return err
+	}
+	if len(elems) != 2 {
+		return fmt.Errorf("bad length, expected 2 items but found %d", len(elems))
+	}
+
+	if i.Hash, err = elems[0].GetBytes(i.Hash, 4); err != nil {
+		return err
+	}
+	if i.Next, err = elems[1].GetUint64(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (i *ID) MarshalRLPWith(ar *fastrlp.Arena) *fastrlp.Value {
+	v := ar.NewArray()
+	v.Set(ar.NewCopyBytes(i.Hash))
+	v.Set(ar.NewUint(i.Next))
+	return v
+}
 
 type ForkID struct {
 	checksums checksums
@@ -43,9 +77,9 @@ func (f *ForkID) findForkAt(block uint64) int {
 	return indx - 1
 }
 
-func (f *ForkID) At(block uint64) (ID, uint64) {
+func (f *ForkID) At(block uint64) ID {
 	indx := f.findForkAt(block)
-	return f.checksums[indx].Checksum, f.checksums[indx+1].Number
+	return ID{Hash: f.checksums[indx].Checksum[:], Next: f.checksums[indx+1].Number}
 }
 
 var (
@@ -113,13 +147,13 @@ func cleanForks(forks []uint64) []uint64 {
 
 type checksums []checksum
 
-func (c *checksums) add(fork uint64, hash ID) {
+func (c *checksums) add(fork uint64, hash [4]byte) {
 	*c = append(*c, checksum{fork, hash})
 }
 
 type checksum struct {
 	Number   uint64
-	Checksum ID
+	Checksum [4]byte
 }
 
 type crc32Checksum struct {

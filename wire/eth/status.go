@@ -1,47 +1,13 @@
 package eth
 
 import (
-	"bytes"
 	"fmt"
 	"math/big"
 
 	"github.com/umbracle/ethgo"
 	"github.com/umbracle/fastrlp"
+	"github.com/umbracle/go-devp2p/forkid"
 )
-
-type ForkID struct {
-	Hash []byte // CRC32 checksum of the genesis block and passed fork block numbers
-	Next uint64 // Block number of the next upcoming fork, or 0 if no forks are known
-}
-
-func (f *ForkID) Equal(ff *ForkID) bool {
-	return f.Next != ff.Next || bytes.Equal(f.Hash, ff.Hash)
-}
-
-func (f *ForkID) UnmarshalRLPWith(v *fastrlp.Value) error {
-	elems, err := v.GetElems()
-	if err != nil {
-		return err
-	}
-	if len(elems) != 2 {
-		return fmt.Errorf("bad length, expected 2 items but found %d", len(elems))
-	}
-
-	if f.Hash, err = elems[0].GetBytes(f.Hash, 4); err != nil {
-		return err
-	}
-	if f.Next, err = elems[1].GetUint64(); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (f *ForkID) MarshalRLPWith(ar *fastrlp.Arena) *fastrlp.Value {
-	v := ar.NewArray()
-	v.Set(ar.NewCopyBytes(f.Hash))
-	v.Set(ar.NewUint(f.Next))
-	return v
-}
 
 type Status struct {
 	ProtocolVersion uint64
@@ -49,7 +15,7 @@ type Status struct {
 	TD              *big.Int
 	Head            [32]byte
 	Genesis         [32]byte
-	ForkID          ForkID
+	ForkID          forkid.ID
 }
 
 func (s *Status) Equal(ss *Status) error {

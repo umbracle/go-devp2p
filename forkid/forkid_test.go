@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/umbracle/fastrlp"
 )
 
 type chainConfig struct {
@@ -47,9 +48,9 @@ func TestForkID_Create(t *testing.T) {
 			id, err := hex.DecodeString(tt.hash)
 			assert.NoError(t, err)
 
-			idFound, next := forkid.At(tt.head)
-			assert.Equal(t, id, idFound[:])
-			assert.Equal(t, next, tt.next)
+			fork := forkid.At(tt.head)
+			assert.Equal(t, id, fork.Hash[:])
+			assert.Equal(t, tt.next, fork.Next)
 		}
 	}
 
@@ -83,7 +84,7 @@ func TestForkID_Create(t *testing.T) {
 func TestForkID_Validate(t *testing.T) {
 	var cases = []struct {
 		head uint64
-		id   string
+		hash string
 		next uint64
 		err  error
 	}{
@@ -107,7 +108,7 @@ func TestForkID_Validate(t *testing.T) {
 
 	forkid := NewForkID(mainnetConfig.genesis, mainnetConfig.forks)
 	for _, c := range cases {
-		id, err := hex.DecodeString(c.id)
+		id, err := hex.DecodeString(c.hash)
 		assert.NoError(t, err)
 
 		err = forkid.Validate(c.head, id, c.next)
@@ -116,5 +117,23 @@ func TestForkID_Validate(t *testing.T) {
 }
 
 func TestForkID_Encoding(t *testing.T) {
+	var cases = []struct {
+		hash   string
+		next   uint64
+		encode string
+	}{
+		{"deadbeef", 0xBADDCAFE, "ca84deadbeef84baddcafe"},
+	}
 
+	for _, c := range cases {
+		hash, err := hex.DecodeString(c.hash)
+		assert.NoError(t, err)
+
+		expected, err := hex.DecodeString(c.encode)
+		assert.NoError(t, err)
+
+		id := ID{Hash: hash, Next: c.next}
+		encoded := id.MarshalRLPWith(&fastrlp.Arena{}).MarshalTo(nil)
+		assert.Equal(t, expected, encoded)
+	}
 }
