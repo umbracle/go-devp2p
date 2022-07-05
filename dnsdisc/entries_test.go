@@ -1,0 +1,12 @@
+package dnsdisc
+
+import "testing"
+
+func TestEntries_Root(t *testing.T) {
+	//
+
+	// parseEntryRoot("enrtree-root:v1 e=O4E5ES6EIACUASHASBGJGEC67M l=FDXN3SN67NA5DKA4J2GOK7BVQI seq=3189 sig=1SSfIYpZxREoK6eGeJZqicZb87O4y8D8YPOD2omG-C8Sb0aD0yInfMjX3F_GEUNHZKt4bpdQsZSJZ-16pndwtQE")
+
+	parseBranchRoot("enrtree-branch:BRU43CYW2S4HCEES3DXJ2QYOYQ,AU6OB5RACUZMZMDZJLNJT7TGY4,BVCJRD3VTLDVFX7OPWPMP33SAU")
+
+}
