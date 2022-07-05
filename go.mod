@@ -4,7 +4,6 @@ go 1.18
 
 require (
 	github.com/btcsuite/btcd v0.22.1
-	github.com/ferranbt/go-kademlia-bucket v0.2.1-0.20190612080044-d5ef9cf1cf01
 	github.com/golang/snappy v0.0.4
 	github.com/stretchr/testify v1.8.0
 	github.com/umbracle/ecies v0.0.0-20190516151710-4bface869a50

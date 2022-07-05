@@ -17,8 +17,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	kbucket "github.com/ferranbt/go-kademlia-bucket"
 	"github.com/umbracle/go-devp2p/crypto"
+	"github.com/umbracle/go-devp2p/discovery/kademlia"
 	"github.com/umbracle/go-devp2p/enode"
 
 	"github.com/umbracle/fastrlp"
@@ -391,7 +391,7 @@ type Backend struct {
 	handlers   map[string]func(payload []byte, timestamp *time.Time)
 	respLock   sync.Mutex
 	validLock  sync.Mutex
-	table      *kbucket.RoutingTable
+	table      *kademlia.RoutingTable
 	nodes      map[string]*Peer
 	local      *Peer
 	shutdownCh chan bool
@@ -451,7 +451,7 @@ func NewBackend(logger *log.Logger, key *ecdsa.PrivateKey, transport Transport) 
 		validLock:  sync.Mutex{},
 		nodes:      map[string]*Peer{},
 		local:      localPeer,
-		table:      kbucket.NewRoutingTable(bucketSize, localPeer.ID, 1000*time.Second, hashFn),
+		table:      kademlia.NewRoutingTable(bucketSize, localPeer.ID, 1000*time.Second, hashFn),
 		shutdownCh: make(chan bool),
 		eventCh:    make(chan string, 10),
 		tasks:      make(chan *Peer, 100),
