@@ -31,11 +31,59 @@ func (d *DnsDisc) run() {
 	fmt.Println("-- entry root --")
 	fmt.Println(entryRoot.eroot, entryRoot.lroot)
 
-	data, err := resolver.LookupTXT(context.Background(), entryRoot.eroot+"."+d.dns)
-	if err != nil {
-		panic(err)
+	//missing := []string{
+	//	entryRoot.eroot,
+	//}
+
+	var resolve func(target string)
+	resolve = func(target string) {
+		fmt.Println(target)
+
+		data, err := resolver.LookupTXT(context.Background(), target+"."+d.dns)
+		if err != nil {
+			panic(err)
+		}
+		for _, i := range data {
+			fmt.Println(i)
+			entries, err := parseBranchRoot(i)
+			if err != nil {
+				panic(err)
+			}
+
+			for _, entry := range entries.hashes {
+				resolve(entry)
+			}
+			//missing = append(missing, entry.hashes...)
+			//fmt.Println(entry.hashes)
+		}
 	}
-	for _, i := range data {
-		parseBranchRoot(i)
-	}
+
+	resolve(entryRoot.eroot)
+
+	/*
+		for {
+			if len(missing) == 0 {
+				break
+			}
+
+			target := missing[0]
+			missing = missing[1:]
+
+			fmt.Println("----")
+			fmt.Println(target)
+
+			data, err := resolver.LookupTXT(context.Background(), target+"."+d.dns)
+			if err != nil {
+				panic(err)
+			}
+			for _, i := range data {
+				entry, err := parseBranchRoot(i)
+				if err != nil {
+					panic(err)
+				}
+				missing = append(missing, entry.hashes...)
+				fmt.Println(entry.hashes)
+			}
+		}
+	*/
 }
