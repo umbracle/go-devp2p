@@ -3,10 +3,13 @@ package dnsdisc
 import (
 	"fmt"
 	"strings"
+
+	"github.com/umbracle/go-devp2p/enr"
 )
 
 // entries prefixes
 var (
+	entryENRPrefix    = "enr:"
 	entryRootPrefix   = "enrtree-root:v1"
 	entryBranchPrefix = "enrtree-branch:"
 )
@@ -54,4 +57,19 @@ func parseBranchRoot(s string) (*entryBranch, error) {
 		hashes: hashes,
 	}
 	return entry, nil
+}
+
+func parseENR(s string) (*enr.Record, error) {
+	return enr.Unmarshal(s)
+}
+
+func parseEntry(s string) (interface{}, error) {
+	switch {
+	case strings.HasPrefix(s, entryENRPrefix):
+		return parseENR(s)
+	case strings.HasPrefix(s, entryBranchPrefix):
+		return parseBranchRoot(s)
+	default:
+		panic("BUG")
+	}
 }

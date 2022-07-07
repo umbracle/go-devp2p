@@ -2,88 +2,90 @@ package dnsdisc
 
 import (
 	"context"
-	"fmt"
 	"net"
+
+	"github.com/umbracle/go-devp2p/enr"
 )
 
 type DnsDisc struct {
 	dns string
+
+	root     *entryRoot
+	resolver *net.Resolver
+
+	missing []string
+	visited map[string]struct{}
+
+	current *enr.Record
 }
 
-func (d *DnsDisc) Resolve(domain string) {
-	resolver := new(net.Resolver)
-	fmt.Println(resolver.LookupTXT(context.Background(), "all.goerli.ethdisco.net"))
-}
-
-func (d *DnsDisc) run() {
-	resolver := new(net.Resolver)
-
-	// resolve root
-	res, err := resolver.LookupTXT(context.Background(), d.dns)
-	if err != nil {
-		panic(err)
+func (d *DnsDisc) nextNode() (*enr.Record, error) {
+	if d.missing == nil {
+		d.missing = []string{}
 	}
-	entryRoot, err := parseEntryRoot(res[0])
-	if err != nil {
-		panic(err)
+	if d.visited == nil {
+		d.visited = map[string]struct{}{}
 	}
 
-	fmt.Println("-- entry root --")
-	fmt.Println(entryRoot.eroot, entryRoot.lroot)
+	if d.root == nil {
+		// resolve entry root
+		d.resolver = new(net.Resolver)
 
-	//missing := []string{
-	//	entryRoot.eroot,
-	//}
-
-	var resolve func(target string)
-	resolve = func(target string) {
-		fmt.Println(target)
-
-		data, err := resolver.LookupTXT(context.Background(), target+"."+d.dns)
+		res, err := d.resolver.LookupTXT(context.Background(), d.dns)
 		if err != nil {
-			panic(err)
+			return nil, err
+		}
+		entryRoot, err := parseEntryRoot(res[0])
+		if err != nil {
+			return nil, err
+		}
+		d.root = entryRoot
+		d.missing = []string{entryRoot.eroot}
+	}
+
+	for {
+		if len(d.missing) == 0 {
+			return nil, nil
+		}
+
+		target := d.missing[0]
+		d.missing = d.missing[1:]
+
+		if _, ok := d.visited[target]; ok {
+			continue
+		}
+		d.visited[target] = struct{}{}
+
+		data, err := d.resolver.LookupTXT(context.Background(), target+"."+d.dns)
+		if err != nil {
+			return nil, err
 		}
 		for _, i := range data {
-			fmt.Println(i)
-			entries, err := parseBranchRoot(i)
+			res, err := parseEntry(i)
 			if err != nil {
-				panic(err)
+				return nil, err
 			}
+			switch obj := res.(type) {
+			case *entryBranch:
+				// DPS
+				d.missing = append(obj.hashes, d.missing...)
 
-			for _, entry := range entries.hashes {
-				resolve(entry)
+			case *enr.Record:
+				return obj, nil
 			}
-			//missing = append(missing, entry.hashes...)
-			//fmt.Println(entry.hashes)
 		}
 	}
+}
 
-	resolve(entryRoot.eroot)
+func (d *DnsDisc) Has() bool {
+	current, err := d.nextNode()
+	if err != nil {
+		// LOG
+	}
+	d.current = current
+	return d.current != nil
+}
 
-	/*
-		for {
-			if len(missing) == 0 {
-				break
-			}
-
-			target := missing[0]
-			missing = missing[1:]
-
-			fmt.Println("----")
-			fmt.Println(target)
-
-			data, err := resolver.LookupTXT(context.Background(), target+"."+d.dns)
-			if err != nil {
-				panic(err)
-			}
-			for _, i := range data {
-				entry, err := parseBranchRoot(i)
-				if err != nil {
-					panic(err)
-				}
-				missing = append(missing, entry.hashes...)
-				fmt.Println(entry.hashes)
-			}
-		}
-	*/
+func (d *DnsDisc) Next() *enr.Record {
+	return d.current
 }
