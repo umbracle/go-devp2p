@@ -115,12 +115,12 @@ func NewServer(key *ecdsa.PrivateKey, transport Transport, opts ...ConfigOption)
 		opt(config)
 	}
 
-	enode := &enode.Enode{
-		IP:  net.ParseIP(config.BindAddress),
-		TCP: uint16(config.BindPort),
-		UDP: uint16(config.BindPort),
-		ID:  enode.PubkeyToEnode(&key.PublicKey),
-	}
+	enode := enode.New(
+		net.ParseIP(config.BindAddress),
+		uint16(config.BindPort),
+		uint16(config.BindPort),
+		enode.PubkeyToEnode(&key.PublicKey),
+	)
 
 	s := &Server{
 		Name:         config.Name,

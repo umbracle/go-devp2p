@@ -132,7 +132,7 @@ func (s *Session) p2pHandshake() error {
 	}
 
 	enodeStr := fmt.Sprintf("enode://%s@%s", s.id, remoteAddr)
-	enode, err := enode.ParseURL(enodeStr)
+	enode, err := enode.NewFromURL(enodeStr)
 	if err != nil {
 		return err
 	}

@@ -65,7 +65,7 @@ func TestParseEnode(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.Name, func(t *testing.T) {
-			node, err := ParseURL(c.enode)
+			node, err := NewFromURL(c.enode)
 			if c.err && err == nil {
 				t.Fatal("expected error")
 			} else if !c.err && err != nil {

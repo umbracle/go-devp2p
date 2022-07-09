@@ -1,10 +1,12 @@
 package enr
 
 import (
+	"crypto/ecdsa"
 	"fmt"
 	"net"
 
 	"github.com/umbracle/fastrlp"
+	"github.com/umbracle/go-devp2p/crypto"
 )
 
 type Uint16 uint16
@@ -71,4 +73,23 @@ func (i *IPv4) UnmarshalRLPWith(v *fastrlp.Value) (err error) {
 		return fmt.Errorf("4 bytes expected for ipv6: %d", len(*i))
 	}
 	return err
+}
+
+type PubKey ecdsa.PublicKey
+
+func (p PubKey) MarshalRLPWith(ar *fastrlp.Arena) *fastrlp.Value {
+	return ar.NewCopyBytes(crypto.CompressPubKey((*ecdsa.PublicKey)(&p)))
+}
+
+func (p *PubKey) UnmarshalRLPWith(v *fastrlp.Value) (err error) {
+	buf, err := v.GetBytes(nil)
+	if err != nil {
+		return err
+	}
+	pub, err := crypto.ParseCompressedPubKey(buf)
+	if err != nil {
+		return err
+	}
+	*p = (PubKey)(*pub)
+	return nil
 }

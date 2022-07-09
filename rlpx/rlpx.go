@@ -133,7 +133,7 @@ func Client(rlpx *Rlpx, conn net.Conn, prv *ecdsa.PrivateKey, pub *ecdsa.PublicK
 
 // DialTimeout implements the transport interface
 func (r *Rlpx) DialTimeout(address string, timeout time.Duration) (devp2p.Session, error) {
-	addr, err := enode.ParseURL(address)
+	addr, err := enode.NewFromURL(address)
 	if err != nil {
 		return nil, err
 	}
@@ -172,7 +172,7 @@ func networkInfoToLocalInfo(info *devp2p.Info) *Info {
 	rlpxInfo := &Info{
 		Version:    BaseProtocolVersion,
 		Name:       info.Client,
-		ListenPort: uint64(info.Enode.TCP),
+		ListenPort: uint64(info.Enode.TCP()),
 		ID:         info.Enode.ID,
 	}
 	for _, cap := range info.Capabilities {

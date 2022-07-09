@@ -9,8 +9,11 @@ import (
 	"net"
 	"net/url"
 	"strconv"
+	"strings"
 
+	"github.com/umbracle/fastrlp"
 	"github.com/umbracle/go-devp2p/crypto"
+	"github.com/umbracle/go-devp2p/enr"
 )
 
 const nodeIDBytes = 512 / 8
@@ -22,16 +25,56 @@ func (i ID) String() string {
 	return hex.EncodeToString(i[:])
 }
 
-// Enode is the URL scheme description of an ethereum node.
-type Enode struct {
-	ID  ID
-	TCP uint16
-	UDP uint16
-	IP  net.IP
+func (i ID) MarshalRLPWith(ar *fastrlp.Arena) *fastrlp.Value {
+	return ar.NewCopyBytes(i[:])
 }
 
-// ParseURL parses an enode address
-func ParseURL(rawurl string) (*Enode, error) {
+func (id *ID) UnmarshalRLPWith(v *fastrlp.Value) (err error) {
+	if _, err := v.GetBytes(id[:], nodeIDBytes); err != nil {
+		return err
+	}
+	return nil
+}
+
+// Enode is the URL scheme description of an ethereum node.
+type Enode struct {
+	ID ID
+	r  *enr.Record
+}
+
+func New(ip net.IP, tcpPort, udpPort uint16, id ID) *Enode {
+	r := &enr.Record{}
+
+	tcpEntry := enr.Uint16(tcpPort)
+	r.AddEntry("tcp", &tcpEntry)
+
+	udpEntry := enr.Uint16(udpPort)
+	r.AddEntry("udp", &udpEntry)
+
+	ipEntry := enr.IPv4(ip)
+	r.AddEntry("ip", &ipEntry)
+
+	node := &Enode{
+		ID: id,
+		r:  r,
+	}
+	return node
+}
+
+func NewFromEnr(record *enr.Record) (*Enode, error) {
+	return nil, nil
+}
+
+// ParseURL parses an node address either in enode or enr format
+func NewFromURL(rawurl string) (*Enode, error) {
+	if strings.HasPrefix(rawurl, "enr:") {
+		record, err := enr.Unmarshal(rawurl)
+		if err != nil {
+			return nil, err
+		}
+		return NewFromEnr(record)
+	}
+
 	u, err := url.Parse(rawurl)
 	if err != nil {
 		return nil, err
@@ -72,21 +115,40 @@ func ParseURL(rawurl string) (*Enode, error) {
 		}
 	}
 
-	node := &Enode{
-		ID:  id,
-		TCP: uint16(tcpPort),
-		UDP: uint16(udpPort),
-		IP:  ip,
-	}
+	node := New(ip, uint16(tcpPort), uint16(udpPort), id)
 	return node, nil
 }
 
 func (n *Enode) String() string {
-	url := fmt.Sprintf("enode://%s@%s", n.ID.String(), (&net.TCPAddr{IP: n.IP, Port: int(n.TCP)}).String())
-	if n.TCP != n.UDP {
-		url += "?discport=" + strconv.Itoa(int(n.UDP))
+	url := fmt.Sprintf("enode://%s@%s", n.ID.String(), (&net.TCPAddr{IP: n.IP(), Port: int(n.TCP())}).String())
+	if n.TCP() != n.UDP() {
+		url += "?discport=" + strconv.Itoa(int(n.UDP()))
 	}
 	return url
+}
+
+func (n *Enode) IP() net.IP {
+	var ip4 enr.IPv4
+	if err := n.r.Load("ip", &ip4); err == nil {
+		return net.IP(ip4)
+	}
+	var ip6 enr.IPv6
+	if err := n.r.Load("ip", &ip6); err == nil {
+		return net.IP(ip6)
+	}
+	return nil
+}
+
+func (n *Enode) UDP() uint16 {
+	var udpPort enr.Uint16
+	n.r.Load("udp", &udpPort)
+	return uint16(udpPort)
+}
+
+func (n *Enode) TCP() uint16 {
+	var tcpPort enr.Uint16
+	n.r.Load("tcp", &tcpPort)
+	return uint16(tcpPort)
 }
 
 // PublicKey returns the public key of the enode
@@ -96,7 +158,7 @@ func (n *Enode) PublicKey() (*ecdsa.PublicKey, error) {
 
 // TCPAddr returns the TCP address
 func (n *Enode) TCPAddr() net.TCPAddr {
-	return net.TCPAddr{IP: n.IP, Port: int(n.TCP)}
+	return net.TCPAddr{IP: n.IP(), Port: int(n.TCP())}
 }
 
 // NodeIDToPubKey returns the public key of the enode ID

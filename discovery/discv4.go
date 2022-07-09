@@ -408,8 +408,8 @@ type Backend struct {
 }
 
 func DiscV4(ctx context.Context, conf *DiscoveryConfig) (Discovery, error) {
-	addr := conf.Enode.IP.String()
-	port := int(conf.Enode.UDP)
+	addr := conf.Enode.IP().String()
+	port := int(conf.Enode.UDP())
 
 	udpAddr := &net.UDPAddr{IP: net.ParseIP(addr), Port: port}
 
@@ -935,7 +935,7 @@ func hasExpired(ts uint64) bool {
 // AddNode adds a new node to the discover process (NOTE: its a sync process)
 // TODO. split in nodeStrToPeer and probe
 func (b *Backend) AddNode(nodeStr string) error {
-	node, err := enode.ParseURL(nodeStr)
+	node, err := enode.NewFromURL(nodeStr)
 	if err != nil {
 		return err
 	}
@@ -945,7 +945,7 @@ func (b *Backend) AddNode(nodeStr string) error {
 		id[i] = node.ID[i]
 	}
 
-	peer, err := newPeer(EncodeToHex(id), &net.UDPAddr{IP: node.IP, Port: int(node.UDP)}, node.TCP)
+	peer, err := newPeer(EncodeToHex(id), &net.UDPAddr{IP: node.IP(), Port: int(node.UDP())}, node.TCP())
 	if err != nil {
 		return err
 	}
