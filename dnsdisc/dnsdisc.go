@@ -106,7 +106,6 @@ func (d *DnsDisc) nextNode() (*enr.Record, error) {
 func (d *DnsDisc) Has() bool {
 	current, err := d.nextNode()
 	if err != nil {
-		fmt.Println(err)
 		d.logger.Printf("[ERROR]: %v", err)
 	}
 	d.current = current
