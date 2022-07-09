@@ -93,3 +93,15 @@ func Keccak256(v ...[]byte) []byte {
 	}
 	return h.Sum(nil)
 }
+
+func CompressPubKey(pub *ecdsa.PublicKey) []byte {
+	return (*btcec.PublicKey)(pub).SerializeCompressed()
+}
+
+func ParseCompressedPubKey(d []byte) (*ecdsa.PublicKey, error) {
+	key, err := btcec.ParsePubKey(d, btcec.S256())
+	if err != nil {
+		return nil, err
+	}
+	return key.ToECDSA(), nil
+}
