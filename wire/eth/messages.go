@@ -38,6 +38,7 @@ func (e *Request) MarshalRLP() ([]byte, error) {
 type Response struct {
 	RequestId uint64
 	Body      RlpResponse
+	BodyRaw   *fastrlp.Value
 }
 
 func (e *Response) UnmarshalRLP(buf []byte) error {
@@ -60,8 +61,12 @@ func (e *Response) UnmarshalRLP(buf []byte) error {
 		return err
 	}
 	// decode the body
-	if err := e.Body.UnmarshalRLPWith(elems[1]); err != nil {
-		return err
+	if e.Body != nil {
+		if err := e.Body.UnmarshalRLPWith(elems[1]); err != nil {
+			return err
+		}
+	} else {
+		e.BodyRaw = elems[1]
 	}
 	return nil
 }
@@ -188,13 +193,9 @@ func (h *HashList) MarshalRLPWith(ar *fastrlp.Arena) *fastrlp.Value {
 	return v
 }
 
-type rlpRawList []*fastrlp.Value
+type RlpList []*fastrlp.Value
 
-func (h *rlpRawList) MarshalRLPWith(ar *fastrlp.Arena) *fastrlp.Value {
-	panic("TODO")
-}
-
-func (h *rlpRawList) UnmarshalRLPWith(v *fastrlp.Value) error {
+func (h *RlpList) UnmarshalRLPWith(v *fastrlp.Value) error {
 	elems, err := v.GetElems()
 	if err != nil {
 		return err
