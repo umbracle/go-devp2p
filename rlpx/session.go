@@ -343,8 +343,6 @@ func (s *Session) recvLoop() error {
 		case code == discMsg:
 			msg := decodeDiscMsg(buf)
 
-			fmt.Println("- disconnect message -", s.enode.ID, msg)
-
 			// TODO, logger
 			return msg
 		default:
