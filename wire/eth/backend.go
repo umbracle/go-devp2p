@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/umbracle/ethgo"
+	"github.com/umbracle/fastrlp"
 	"github.com/umbracle/go-devp2p"
 )
 
@@ -17,7 +17,7 @@ type Eth66Backend interface {
 	GetBlockBodies(hashes [][32]byte) Eth66Body
 	GetTransactions(hashes [][32]byte) Eth66Body
 	NotifyTransactionHashes(hashes [][32]byte)
-	NotifyTransactions(txns []*ethgo.Transaction)
+	NotifyTransactions(v *fastrlp.Value)
 	NotifyBlockHashes(hashes []*NewBlockHash)
 }
 
@@ -30,28 +30,28 @@ type Peer struct {
 	closeCh chan struct{}
 }
 
-func (p *Peer) request(code ethMessage, msg Eth66Body) (interface{}, error) {
+func (p *Peer) request(dst RlpResponse, code ethMessage, msg Eth66Body) error {
 	req := &Request{
 		RequestId: rand.Uint64(),
 		Body:      msg,
 	}
 	if err := p.handler.Write(code, req); err != nil {
-		return nil, err
+		return err
 	}
-	return p.handler.doRequest(req)
+	return p.handler.doRequest(dst, req)
 }
 
-func (p *Peer) GetTransactions(hashes [][32]byte) (interface{}, error) {
+func (p *Peer) GetTransactions(dst RlpResponse, hashes [][32]byte) error {
 	obj := HashList(hashes)
-	return p.request(GetPooledTransactionsMsg, &obj)
+	return p.request(dst, GetPooledTransactionsMsg, &obj)
 }
 
-func (p *Peer) GetBlockByNumber(i uint64) (interface{}, error) {
+func (p *Peer) GetBlockByNumber(dst RlpResponse, i uint64) error {
 	obj := &BlockHeadersPacket{
 		Number: i,
 		Amount: 1,
 	}
-	return p.request(GetBlockHeadersMsg, obj)
+	return p.request(dst, GetBlockHeadersMsg, obj)
 }
 
 func (p *Peer) CloseCh() chan struct{} {
@@ -71,31 +71,47 @@ type handler struct {
 	inflight sync.Map
 }
 
-func (h *handler) doRequest(req *Request) (interface{}, error) {
-	ch := make(chan interface{})
-	h.inflight.Store(req.RequestId, ch)
+type inflightRequest struct {
+	ch   chan error
+	resp RlpResponse
+}
+
+func (h *handler) doRequest(dst RlpResponse, req *Request) error {
+	req2 := &inflightRequest{
+		ch:   make(chan error),
+		resp: dst,
+	}
+	h.inflight.Store(req.RequestId, req2)
 
 	defer func() {
-		close(ch)
+		close(req2.ch)
 		h.inflight.Delete(req.RequestId)
 	}()
 
 	select {
-	case res := <-ch:
-		return res, nil
+	case err := <-req2.ch:
+		return err
 	case <-time.After(6 * time.Second):
-		return nil, fmt.Errorf("bad")
+		return fmt.Errorf("timeout")
 	}
 }
 
-func (h *handler) deliverResponse(resp *Response) error {
-	ch, ok := h.inflight.Load(resp.RequestId)
+func (h *handler) deliverResponse(resp *Response) (err error) {
+	raw, ok := h.inflight.Load(resp.RequestId)
 	if !ok {
-		return fmt.Errorf("bad")
+		return fmt.Errorf("id not found")
 	}
-	select {
-	case ch.(chan interface{}) <- resp.Body:
-	default:
+	req := raw.(*inflightRequest)
+
+	defer func() {
+		select {
+		case req.ch <- err:
+		default:
+		}
+	}()
+
+	if err = req.resp.UnmarshalRLPWith(resp.BodyRaw); err != nil {
+		return err
 	}
 	return nil
 }
@@ -125,7 +141,6 @@ func (h *handler) run() error {
 	if err := status.UnmarshalRLP(buf); err != nil {
 		panic(err)
 	}
-	fmt.Println(status)
 
 	if err := localStatus.Equal(status); err != nil {
 		h.Close()
@@ -135,8 +150,9 @@ func (h *handler) run() error {
 	fmt.Println("_ GOOD PEER _", h.peer.Info.Client, h.peer.PrettyID(), status, localStatus)
 
 	go func() {
-		time.Sleep(5 * time.Second)
-		fmt.Println(pp.GetBlockByNumber(0))
+		//time.Sleep(5 * time.Second)
+		body := &RlpList{}
+		fmt.Println(pp.GetBlockByNumber(body, 0))
 	}()
 
 	h.Impl.NotifyPeer(pp)
@@ -155,14 +171,28 @@ func (h *handler) run() error {
 }
 
 func (h *handler) handleMsg(code uint16, buf []byte) error {
+
+	deliverResponse := func() error {
+		msg := &Response{}
+		if err := msg.UnmarshalRLP(buf); err != nil {
+			return err
+		}
+		if err := h.deliverResponse(msg); err != nil {
+			return err
+		}
+		return nil
+	}
+
 	switch ethMessage(code) {
 	case TransactionsMsg:
 		// done
-		m := &TransactionsMsgPacket{}
-		if err := m.UnmarshalRLP(buf); err != nil {
+
+		p := fastrlp.Parser{}
+		v, err := p.Parse(buf)
+		if err != nil {
 			return err
 		}
-		h.Impl.NotifyTransactions(*m)
+		h.Impl.NotifyTransactions(v)
 
 	case NewBlockHashesMsg:
 		msg := &newBlockHashesPacket{}
@@ -180,13 +210,7 @@ func (h *handler) handleMsg(code uint16, buf []byte) error {
 		h.Impl.NotifyTransactionHashes(*m)
 
 	case BlockBodiesMsg:
-
-		// response
-		msg := &Response{}
-		if err := msg.UnmarshalRLP(buf); err != nil {
-			return err
-		}
-		if err := h.deliverResponse(msg); err != nil {
+		if err := deliverResponse(); err != nil {
 			return err
 		}
 
@@ -199,12 +223,9 @@ func (h *handler) handleMsg(code uint16, buf []byte) error {
 		if err := msg.UnmarshalRLP(buf); err != nil {
 			return err
 		}
-
-		respBody := h.Impl.GetBlockBodies(*body)
-
 		resp := &Request{
 			RequestId: msg.RequestId,
-			Body:      respBody,
+			Body:      h.Impl.GetBlockBodies(*body),
 		}
 		if err := h.Write(BlockBodiesMsg, resp); err != nil {
 			return err
@@ -213,19 +234,11 @@ func (h *handler) handleMsg(code uint16, buf []byte) error {
 	case BlockHeadersMsg:
 
 		// response to block headers
-		body := &rlpRawList{}
-		msg := &Response{
-			Body: body,
-		}
-		if err := msg.UnmarshalRLP(buf); err != nil {
-			return err
-		}
-		if err := h.deliverResponse(msg); err != nil {
+		if err := deliverResponse(); err != nil {
 			return err
 		}
 
 	case GetBlockHeadersMsg:
-		// unhandled
 
 		body := &BlockHeadersPacket{}
 		msg := &Response{
@@ -234,12 +247,9 @@ func (h *handler) handleMsg(code uint16, buf []byte) error {
 		if err := msg.UnmarshalRLP(buf); err != nil {
 			return err
 		}
-
-		respBody := h.Impl.GetBlockHeader(body)
-
 		resp := &Request{
 			RequestId: msg.RequestId,
-			Body:      respBody,
+			Body:      h.Impl.GetBlockHeader(body),
 		}
 		if err := h.Write(BlockHeadersMsg, resp); err != nil {
 			return err
@@ -247,14 +257,7 @@ func (h *handler) handleMsg(code uint16, buf []byte) error {
 
 	case PooledTransactionsMsg:
 
-		body := &TransactionsMsgPacket{}
-		msg := &Response{
-			Body: body,
-		}
-		if err := msg.UnmarshalRLP(buf); err != nil {
-			return err
-		}
-		if err := h.deliverResponse(msg); err != nil {
+		if err := deliverResponse(); err != nil {
 			return err
 		}
 
@@ -267,12 +270,9 @@ func (h *handler) handleMsg(code uint16, buf []byte) error {
 		if err := msg.UnmarshalRLP(buf); err != nil {
 			return err
 		}
-
-		respBody := h.Impl.GetTransactions(*body)
-
 		resp := &Request{
 			RequestId: msg.RequestId,
-			Body:      respBody,
+			Body:      h.Impl.GetTransactions(*body),
 		}
 		if err := h.Write(PooledTransactionsMsg, resp); err != nil {
 			return err

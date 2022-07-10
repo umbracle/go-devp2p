@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/umbracle/ethgo"
 	"github.com/umbracle/fastrlp"
 	"github.com/umbracle/go-devp2p/forkid"
 )
@@ -84,68 +83,4 @@ func (s *Status) MarshalRLP() ([]byte, error) {
 
 	dst := v.MarshalTo(nil)
 	return dst, nil
-}
-
-type TransactionsMsgPacket []*ethgo.Transaction
-
-func (t *TransactionsMsgPacket) MarshalRLPWith(ar *fastrlp.Arena) *fastrlp.Value {
-	panic("TODO")
-}
-
-func (t *TransactionsMsgPacket) UnmarshalRLPWith(v *fastrlp.Value) error {
-	elems, err := v.GetElems()
-	if err != nil {
-		return err
-	}
-
-	for _, elem := range elems {
-		txn := &ethgo.Transaction{}
-
-		if elem.Type() == fastrlp.TypeBytes {
-			// new types
-			buf, _ := elem.GetBytes(nil)
-			fmt.Println(buf[0])
-
-			switch typ := buf[0]; typ {
-			case 1:
-				txn.Type = ethgo.TransactionAccessList
-			case 2:
-				txn.Type = ethgo.TransactionDynamicFee
-			default:
-				return fmt.Errorf("type byte %d not found", typ)
-			}
-
-			pp := fastrlp.Parser{}
-			subVal, err := pp.Parse(buf[1:])
-			if err != nil {
-				panic(err)
-			}
-			if err := txn.UnmarshalRLPWith(subVal); err != nil {
-				panic(err)
-			}
-
-		} else {
-			// legacy
-			if err := txn.UnmarshalRLPWith(elem); err != nil {
-				panic(err)
-			}
-		}
-
-		*t = append(*t, txn)
-	}
-	return nil
-}
-
-func (t *TransactionsMsgPacket) UnmarshalRLP(buf []byte) error {
-	p := fastrlp.Parser{}
-
-	v, err := p.Parse(buf)
-	if err != nil {
-		return err
-	}
-
-	if err := t.UnmarshalRLPWith(v); err != nil {
-		return err
-	}
-	return nil
 }

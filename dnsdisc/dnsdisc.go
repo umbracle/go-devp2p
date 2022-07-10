@@ -8,7 +8,7 @@ import (
 	"log"
 	"net"
 
-	"github.com/umbracle/ethgo"
+	"github.com/umbracle/go-devp2p/crypto"
 	"github.com/umbracle/go-devp2p/enr"
 )
 
@@ -86,7 +86,7 @@ func (d *DnsDisc) nextNode() (*enr.Record, error) {
 				return nil, err
 			}
 
-			txtHash := ethgo.Keccak256([]byte(i))
+			txtHash := crypto.Keccak256([]byte(i))
 			if !bytes.HasPrefix(txtHash, expectedPrefix) {
 				return nil, fmt.Errorf("incorrect hash")
 			}
