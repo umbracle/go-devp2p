@@ -6,7 +6,9 @@ import (
 	"crypto/rand"
 	"fmt"
 
-	"github.com/btcsuite/btcd/btcec"
+	btcec "github.com/btcsuite/btcd/btcec/v2"
+	btcEcdsa "github.com/btcsuite/btcd/btcec/v2/ecdsa"
+
 	"github.com/umbracle/ecies"
 	"golang.org/x/crypto/sha3"
 )
@@ -19,7 +21,7 @@ func init() {
 var S256 = btcec.S256()
 
 func ParsePrivateKey(buf []byte) (*ecdsa.PrivateKey, error) {
-	prv, _ := btcec.PrivKeyFromBytes(S256, buf)
+	prv, _ := btcec.PrivKeyFromBytes(buf)
 	return prv.ToECDSA(), nil
 }
 
@@ -64,7 +66,7 @@ func RecoverPubkey(signature, hash []byte) (*ecdsa.PublicKey, error) {
 	}
 
 	sig := append([]byte{term}, signature[:size-1]...)
-	pub, _, err := btcec.RecoverCompact(S256, sig, hash)
+	pub, _, err := btcec.RecoverCompact(sig, hash)
 	if err != nil {
 		return nil, err
 	}
@@ -98,10 +100,37 @@ func CompressPubKey(pub *ecdsa.PublicKey) []byte {
 	return (*btcec.PublicKey)(pub).SerializeCompressed()
 }
 
+func SerializeUncompressed(pub *ecdsa.PublicKey) []byte {
+	return (*btcec.PublicKey)(pub).SerializeUncompressed()
+}
+
 func ParseCompressedPubKey(d []byte) (*ecdsa.PublicKey, error) {
 	key, err := btcec.ParsePubKey(d, btcec.S256())
 	if err != nil {
 		return nil, err
 	}
 	return key.ToECDSA(), nil
+}
+
+func VerifySignature(sig []byte) {
+
+	if len(sig) != 64 {
+
+	}
+	var r, s btcec.ModNScalar
+	if r.SetByteSlice(signature[:32]) {
+		return false // overflow
+	}
+	if s.SetByteSlice(signature[32:]) {
+		return false
+	}
+
+	fmt.Println(btcEcdsa.ParseSignature(sig))
+
+}
+
+type PublicKey struct {
+}
+
+type PrivateKey struct {
 }

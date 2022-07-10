@@ -61,11 +61,30 @@ func New(ip net.IP, tcpPort, udpPort uint16, id ID) *Enode {
 	return node
 }
 
+// NewFromEnr parses a node from its enr record
 func NewFromEnr(record *enr.Record) (*Enode, error) {
+	var pubKey enr.PubKey
+	if err := record.Load("secp256k1", &pubKey); err != nil {
+		return nil, err
+	}
+
+	// remove the first byte that signals the type of compression
+	pubKeyMarshal := crypto.SerializeUncompressed((*ecdsa.PublicKey)(&pubKey))[1:]
+	id := crypto.Keccak256(pubKeyMarshal)
+	fmt.Println("-id", id)
+
+	// verify signature
+	fmt.Println(record.Signature())
+
+	sigHash := record.SigHash()
+	fmt.Println(sigHash)
+
+	crypto.VerifySignature(record.Signature())
+
 	return nil, nil
 }
 
-// ParseURL parses an node address either in enode or enr format
+// NewFromURL parses an node address either in enode or enr format
 func NewFromURL(rawurl string) (*Enode, error) {
 	if strings.HasPrefix(rawurl, "enr:") {
 		record, err := enr.Unmarshal(rawurl)

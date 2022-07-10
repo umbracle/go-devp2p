@@ -7,7 +7,13 @@ import (
 	"strings"
 
 	"github.com/umbracle/fastrlp"
+	"github.com/umbracle/go-devp2p/crypto"
 )
+
+type Signer interface {
+	Verify(signature []byte) error
+	Sign(r Record) ([]byte, error)
+}
 
 type Record struct {
 	seq       uint64
@@ -68,11 +74,21 @@ func (r *Record) Marshal() string {
 	return "enr:" + base64.RawURLEncoding.EncodeToString(r.MarshalRLP())
 }
 
+func (r *Record) SigHash() []byte {
+	return crypto.Keccak256(r.marshalRLP(false))
+}
+
 func (r *Record) MarshalRLP() []byte {
+	return r.marshalRLP(true)
+}
+
+func (r *Record) marshalRLP(includeSignature bool) []byte {
 	ar := &fastrlp.Arena{}
 
 	v := ar.NewArray()
-	v.Set(ar.NewCopyBytes(r.signature))
+	if includeSignature {
+		v.Set(ar.NewCopyBytes(r.signature))
+	}
 	v.Set(ar.NewUint(r.seq))
 	for _, entry := range r.entries {
 		v.Set(ar.NewCopyBytes([]byte(entry.k)))

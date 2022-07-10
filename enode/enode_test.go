@@ -5,7 +5,14 @@ import (
 	"testing"
 )
 
-func TestParseEnode(t *testing.T) {
+func TestParse_Enr(t *testing.T) {
+	enrStr := "enr:-IS4QHCYrYZbAKWCBRlAy5zzaDZXJBGkcnh4MHcBFZntXNFrdvJjX04jRzjzCBOonrkTfj499SZuOh8R33Ls8RRcy5wBgmlkgnY0gmlwhH8AAAGJc2VjcDI1NmsxoQPKY0yuDUmstAHYpMa2_oxVtw0RW_QAdpzBQA8yWM0xOIN1ZHCCdl8"
+	NewFromURL(enrStr)
+
+	// a448f24c6d18e575453db13171562b71999873db5b286df957af199ec94617f7
+}
+
+func TestParse_Enode(t *testing.T) {
 	id1 := "1dd9d65c4552b5eb43d5ad55a2ee3f56c6cbc1c64a5c8d659f51fcd51bace24351232b8d7821617d2b29b54b81cdefb9b3e9c37d7fd5f63270bcc9e1a6f6a439"
 
 	enode := func(prefix, id, ip, port string) string {
