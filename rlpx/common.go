@@ -72,30 +72,35 @@ func (d DiscReason) Error() string {
 	return d.String()
 }
 
-var discReasonParserPool fastrlp.ParserPool
-
-func decodeDiscMsg(buf []byte) DiscReason {
-	p := discReasonParserPool.Get()
-	defer discReasonParserPool.Put(p)
+func decodeDiscMsg(buf []byte) (DiscReason, error) {
+	p := &fastrlp.Parser{}
 
 	v, err := p.Parse(buf)
 	if err != nil {
-		return DiscUnknown
+		return DiscUnknown, err
 	}
+
+	var elem *fastrlp.Value
+
 	elems, err := v.GetElems()
-	if err != nil {
-		return DiscUnknown
+	if err == nil {
+		// the disconnect reason is an array
+		if len(elems) != 1 {
+			return DiscUnknown, fmt.Errorf("expected one item")
+		}
+		elem = elems[0]
+	} else {
+		// the disconnect reason is in plain bytes
+		elem = v
 	}
-	if len(elems) != 1 {
-		return DiscUnknown
-	}
-	num, err := elems[0].GetUint64()
+
+	num, err := elem.GetUint64()
 	if err != nil {
-		return DiscUnknown
+		return DiscUnknown, fmt.Errorf("failed to decode disc reason uint64: %v", err)
 	}
 
 	reason := DiscReason(num)
-	return reason
+	return reason, nil
 }
 
 const (
