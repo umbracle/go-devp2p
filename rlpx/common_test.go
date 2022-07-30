@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"reflect"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestMarshalUnmarshalInfo(t *testing.T) {
@@ -26,4 +28,17 @@ func TestMarshalUnmarshalInfo(t *testing.T) {
 	fmt.Println(info)
 	fmt.Println(info2)
 	fmt.Println(reflect.DeepEqual(info, info2))
+}
+
+func TestDisconnectReason(t *testing.T) {
+	reason := DiscQuitting
+
+	for _, m := range [][]byte{
+		{0xc1, byte(reason)},
+		{byte(reason)},
+	} {
+		found, err := decodeDiscMsg(m)
+		assert.NoError(t, err)
+		assert.Equal(t, reason, found)
+	}
 }

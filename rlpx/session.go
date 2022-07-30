@@ -341,7 +341,10 @@ func (s *Session) recvLoop() error {
 			// Already handled
 
 		case code == discMsg:
-			msg := decodeDiscMsg(buf)
+			msg, err := decodeDiscMsg(buf)
+			if err != nil {
+				// Log
+			}
 
 			// TODO, logger
 			return msg

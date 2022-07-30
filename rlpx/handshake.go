@@ -425,7 +425,11 @@ func readProtocolHandshake(conn *Session) (*Info, error) {
 	}
 
 	if code == discMsg {
-		return nil, decodeDiscMsg(buf)
+		msg, err := decodeDiscMsg(buf)
+		if err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("disconnected: %s", msg)
 	}
 	if code != handshakeMsg {
 		return nil, fmt.Errorf("expected handshake, got %x", code)
