@@ -13,9 +13,9 @@ import (
 type Eth66Backend interface {
 	Status() *Status
 	NotifyPeer(p *Peer)
-	GetBlockHeader(req *BlockHeadersPacket) Eth66Body
-	GetBlockBodies(hashes [][32]byte) Eth66Body
-	GetTransactions(hashes [][32]byte) Eth66Body
+	GetBlockHeader(req *BlockHeadersPacket) Marshaler
+	GetBlockBodies(hashes [][32]byte) Marshaler
+	GetTransactions(hashes [][32]byte) Marshaler
 	NotifyTransactionHashes(hashes [][32]byte)
 	NotifyTransactions(v *fastrlp.Value)
 	NotifyBlockHashes(hashes []*NewBlockHash)
@@ -28,9 +28,14 @@ type Eth66Protocol struct {
 type Peer struct {
 	handler *handler
 	closeCh chan struct{}
+	status  *Status
 }
 
-func (p *Peer) request(dst RlpResponse, code ethMessage, msg Eth66Body) error {
+func (p *Peer) Status() *Status {
+	return p.status
+}
+
+func (p *Peer) request(dst Unmarshaler, code ethMessage, msg Marshaler) error {
 	req := &Request{
 		RequestId: rand.Uint64(),
 		Body:      msg,
@@ -41,12 +46,12 @@ func (p *Peer) request(dst RlpResponse, code ethMessage, msg Eth66Body) error {
 	return p.handler.doRequest(dst, req)
 }
 
-func (p *Peer) GetTransactions(dst RlpResponse, hashes [][32]byte) error {
+func (p *Peer) GetTransactions(dst Unmarshaler, hashes [][32]byte) error {
 	obj := HashList(hashes)
 	return p.request(dst, GetPooledTransactionsMsg, &obj)
 }
 
-func (p *Peer) GetBlockByNumber(dst RlpResponse, i uint64) error {
+func (p *Peer) GetBlockByNumber(dst Unmarshaler, i uint64) error {
 	obj := &BlockHeadersPacket{
 		Number: i,
 		Amount: 1,
@@ -73,10 +78,10 @@ type handler struct {
 
 type inflightRequest struct {
 	ch   chan error
-	resp RlpResponse
+	resp Unmarshaler
 }
 
-func (h *handler) doRequest(dst RlpResponse, req *Request) error {
+func (h *handler) doRequest(dst Unmarshaler, req *Request) error {
 	req2 := &inflightRequest{
 		ch:   make(chan error),
 		resp: dst,
@@ -116,19 +121,13 @@ func (h *handler) deliverResponse(resp *Response) (err error) {
 	return nil
 }
 
-func (h *handler) run() error {
+func (h *handler) handshake() (*Status, error) {
 	localStatus := h.Impl.Status()
-
-	pp := &Peer{
-		handler: h,
-		closeCh: make(chan struct{}),
-	}
-	defer pp.close()
 
 	buf, _, err := h.conn.ReadMsg()
 	if err != nil {
 		fmt.Printf("failed to read msg: %v\n", err)
-		return err
+		return nil, err
 	}
 
 	go func() {
@@ -137,23 +136,34 @@ func (h *handler) run() error {
 		}
 	}()
 
-	status := &Status{}
-	if err := status.UnmarshalRLP(buf); err != nil {
+	remote := &Status{}
+	if err := UnmarshalRLP(buf, remote); err != nil {
 		panic(err)
 	}
 
-	if err := localStatus.Equal(status); err != nil {
+	if err := localStatus.Equal(remote); err != nil {
 		h.Close()
+		return nil, err
+	}
+	return remote, nil
+}
+
+func (h *handler) run() error {
+
+	pp := &Peer{
+		handler: h,
+		closeCh: make(chan struct{}),
+	}
+	defer pp.close()
+
+	// perform eth handshake
+	remote, err := h.handshake()
+	if err != nil {
 		return err
 	}
+	pp.status = remote
 
-	fmt.Println("_ GOOD PEER _", h.peer.Info.Client, h.peer.PrettyID(), status, localStatus)
-
-	go func() {
-		//time.Sleep(5 * time.Second)
-		body := &RlpList{}
-		fmt.Println(pp.GetBlockByNumber(body, 0))
-	}()
+	fmt.Println("_ GOOD PEER _", h.peer.Info.Client, h.peer.PrettyID(), remote)
 
 	h.Impl.NotifyPeer(pp)
 
@@ -171,10 +181,9 @@ func (h *handler) run() error {
 }
 
 func (h *handler) handleMsg(code uint16, buf []byte) error {
-
 	deliverResponse := func() error {
 		msg := &Response{}
-		if err := msg.UnmarshalRLP(buf); err != nil {
+		if err := UnmarshalRLP(buf, msg); err != nil {
 			return err
 		}
 		if err := h.deliverResponse(msg); err != nil {
@@ -185,8 +194,6 @@ func (h *handler) handleMsg(code uint16, buf []byte) error {
 
 	switch ethMessage(code) {
 	case TransactionsMsg:
-		// done
-
 		p := fastrlp.Parser{}
 		v, err := p.Parse(buf)
 		if err != nil {
@@ -196,18 +203,17 @@ func (h *handler) handleMsg(code uint16, buf []byte) error {
 
 	case NewBlockHashesMsg:
 		msg := &newBlockHashesPacket{}
-		if err := msg.UnmarshalRLP(buf); err != nil {
+		if err := UnmarshalRLP(buf, msg); err != nil {
 			return err
 		}
 		h.Impl.NotifyBlockHashes(*msg)
 
 	case NewPooledTransactionHashesMsg:
-		// done
-		m := &HashList{}
-		if err := m.UnmarshalRLP(buf); err != nil {
+		msg := &HashList{}
+		if err := UnmarshalRLP(buf, msg); err != nil {
 			return err
 		}
-		h.Impl.NotifyTransactionHashes(*m)
+		h.Impl.NotifyTransactionHashes(*msg)
 
 	case BlockBodiesMsg:
 		if err := deliverResponse(); err != nil {
@@ -215,12 +221,11 @@ func (h *handler) handleMsg(code uint16, buf []byte) error {
 		}
 
 	case GetBlockBodiesMsg:
-
 		body := &HashList{}
 		msg := &Response{
 			Body: body,
 		}
-		if err := msg.UnmarshalRLP(buf); err != nil {
+		if err := UnmarshalRLP(buf, msg); err != nil {
 			return err
 		}
 		resp := &Request{
@@ -232,19 +237,17 @@ func (h *handler) handleMsg(code uint16, buf []byte) error {
 		}
 
 	case BlockHeadersMsg:
-
 		// response to block headers
 		if err := deliverResponse(); err != nil {
 			return err
 		}
 
 	case GetBlockHeadersMsg:
-
 		body := &BlockHeadersPacket{}
 		msg := &Response{
 			Body: body,
 		}
-		if err := msg.UnmarshalRLP(buf); err != nil {
+		if err := UnmarshalRLP(buf, msg); err != nil {
 			return err
 		}
 		resp := &Request{
@@ -256,18 +259,16 @@ func (h *handler) handleMsg(code uint16, buf []byte) error {
 		}
 
 	case PooledTransactionsMsg:
-
 		if err := deliverResponse(); err != nil {
 			return err
 		}
 
 	case GetPooledTransactionsMsg:
-
 		body := &HashList{}
 		msg := &Response{
 			Body: body,
 		}
-		if err := msg.UnmarshalRLP(buf); err != nil {
+		if err := UnmarshalRLP(buf, msg); err != nil {
 			return err
 		}
 		resp := &Request{
@@ -311,16 +312,8 @@ func (b *Eth66Protocol) Eth66() *devp2p.Protocol {
 	}
 }
 
-type rlpMessage interface {
-	MarshalRLP() ([]byte, error)
-}
-
-func (h *handler) Write(code ethMessage, msg rlpMessage) error {
-	b, err := msg.MarshalRLP()
-	if err != nil {
-		return err
-	}
-	return h.conn.WriteMsg(uint64(code), b)
+func (h *handler) Write(code ethMessage, msg Marshaler) error {
+	return h.conn.WriteMsg(uint64(code), MarshalRLP(msg))
 }
 
 type ethMessage int16
