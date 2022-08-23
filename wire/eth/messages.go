@@ -2,52 +2,61 @@ package eth
 
 import (
 	"fmt"
+	"math/big"
 
 	"github.com/umbracle/fastrlp"
+	"github.com/umbracle/go-devp2p/forkid"
 )
 
-type Eth66Body interface {
-	MarshalRLPWith(ar *fastrlp.Arena) *fastrlp.Value
+// Marshaler is the interface implemented by types that can marshal themselves into valid RLP messages.
+type Marshaler interface {
+	MarshalRLPWith(a *fastrlp.Arena) *fastrlp.Value
+}
+
+// Unmarshaler is the interface implemented by types that can unmarshal a RLP description of themselves
+type Unmarshaler interface {
 	UnmarshalRLPWith(v *fastrlp.Value) error
 }
 
-type RlpRequest interface {
-	MarshalRLPWith(ar *fastrlp.Arena) *fastrlp.Value
-}
-
-type RlpResponse interface {
-	UnmarshalRLPWith(v *fastrlp.Value) error
-}
-
-type Request struct {
-	RequestId uint64
-	Body      RlpRequest
-}
-
-func (e *Request) MarshalRLP() ([]byte, error) {
+// MarshalRLP marshals an RLP object
+func MarshalRLP(m Marshaler) []byte {
 	ar := &fastrlp.Arena{}
-
-	v := ar.NewArray()
-	v.Set(ar.NewUint(e.RequestId))
-	v.Set(e.Body.MarshalRLPWith(ar))
-
-	dst := v.MarshalTo(nil)
-	return dst, nil
+	v := m.MarshalRLPWith(ar)
+	return v.MarshalTo(nil)
 }
 
-type Response struct {
-	RequestId uint64
-	Body      RlpResponse
-	BodyRaw   *fastrlp.Value
-}
-
-func (e *Response) UnmarshalRLP(buf []byte) error {
+// UnmarshalRLP unmarshals an RLP object
+func UnmarshalRLP(buf []byte, m Unmarshaler) error {
 	p := &fastrlp.Parser{}
 	v, err := p.Parse(buf)
 	if err != nil {
 		return err
 	}
+	if err := m.UnmarshalRLPWith(v); err != nil {
+		return err
+	}
+	return nil
+}
 
+type Request struct {
+	RequestId uint64
+	Body      Marshaler
+}
+
+func (e *Request) MarshalRLPWith(ar *fastrlp.Arena) *fastrlp.Value {
+	v := ar.NewArray()
+	v.Set(ar.NewUint(e.RequestId))
+	v.Set(e.Body.MarshalRLPWith(ar))
+	return v
+}
+
+type Response struct {
+	RequestId uint64
+	Body      Unmarshaler
+	BodyRaw   *fastrlp.Value
+}
+
+func (e *Response) UnmarshalRLPWith(v *fastrlp.Value) error {
 	elems, err := v.GetElems()
 	if err != nil {
 		return err
@@ -149,19 +158,6 @@ func (g *BlockHeadersPacket) UnmarshalRLPWith(v *fastrlp.Value) error {
 
 type HashList [][32]byte
 
-func (h *HashList) UnmarshalRLP(buf []byte) error {
-	p := fastrlp.Parser{}
-
-	v, err := p.Parse(buf)
-	if err != nil {
-		return err
-	}
-	if err := h.UnmarshalRLPWith(v); err != nil {
-		return err
-	}
-	return nil
-}
-
 func (h *HashList) UnmarshalRLPWith(v *fastrlp.Value) error {
 	elems, err := v.GetElems()
 	if err != nil {
@@ -176,13 +172,6 @@ func (h *HashList) UnmarshalRLPWith(v *fastrlp.Value) error {
 		*h = append(*h, hash)
 	}
 	return nil
-}
-
-func (h *HashList) MarshalRLP() ([]byte, error) {
-	ar := &fastrlp.Arena{}
-	v := h.MarshalRLPWith(ar)
-	res := v.MarshalTo(nil)
-	return res, nil
 }
 
 func (h *HashList) MarshalRLPWith(ar *fastrlp.Arena) *fastrlp.Value {
@@ -228,12 +217,7 @@ func (n *NewBlockHash) UnmarshalRLPWith(v *fastrlp.Value) error {
 	return nil
 }
 
-func (n *newBlockHashesPacket) UnmarshalRLP(buf []byte) error {
-	p := fastrlp.Parser{}
-	v, err := p.Parse(buf)
-	if err != nil {
-		return err
-	}
+func (n *newBlockHashesPacket) UnmarshalRLPWith(v *fastrlp.Value) error {
 	elems, err := v.GetElems()
 	if err != nil {
 		return err
@@ -246,4 +230,71 @@ func (n *newBlockHashesPacket) UnmarshalRLP(buf []byte) error {
 		*n = append(*n, packet)
 	}
 	return nil
+}
+
+type Status struct {
+	ProtocolVersion uint64
+	NetworkID       uint64
+	TD              *big.Int
+	Head            [32]byte
+	Genesis         [32]byte
+	ForkID          forkid.ID
+}
+
+func (s *Status) Equal(ss *Status) error {
+	if s.ProtocolVersion != ss.ProtocolVersion {
+		return fmt.Errorf("incorrect protocol version")
+	}
+	if s.NetworkID != ss.NetworkID {
+		return fmt.Errorf("incorrect network")
+	}
+	if s.Genesis != ss.Genesis {
+		return fmt.Errorf("incorrect genesis")
+	}
+	if !s.ForkID.Equal(&ss.ForkID) {
+		return fmt.Errorf("incorrect fork id")
+	}
+	return nil
+}
+
+func (s *Status) UnmarshalRLPWith(v *fastrlp.Value) error {
+	elems, err := v.GetElems()
+	if err != nil {
+		return err
+	}
+	if len(elems) != 6 {
+		return fmt.Errorf("bad length, expected 5 items but found %d", len(elems))
+	}
+
+	if s.ProtocolVersion, err = elems[0].GetUint64(); err != nil {
+		return err
+	}
+	if s.NetworkID, err = elems[1].GetUint64(); err != nil {
+		return err
+	}
+	s.TD = new(big.Int)
+	if err := elems[2].GetBigInt(s.TD); err != nil {
+		return err
+	}
+	if err = elems[3].GetHash(s.Head[:]); err != nil {
+		return err
+	}
+	if err = elems[4].GetHash(s.Genesis[:]); err != nil {
+		return err
+	}
+	if err := s.ForkID.UnmarshalRLPWith(elems[5]); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *Status) MarshalRLPWith(ar *fastrlp.Arena) *fastrlp.Value {
+	v := ar.NewArray()
+	v.Set(ar.NewUint(s.ProtocolVersion))
+	v.Set(ar.NewUint(s.NetworkID))
+	v.Set(ar.NewBigInt(s.TD))
+	v.Set(ar.NewBytes(s.Head[:]))
+	v.Set(ar.NewBytes(s.Genesis[:]))
+	v.Set(s.ForkID.MarshalRLPWith(ar))
+	return v
 }
